@@ -5,11 +5,10 @@ Created on Sun Aug 23 17:19:35 2020
 @author: ma125
 """
 
-from spectral import imshow, view_cube
+from spectral import imshow
 import spectral.io.envi as envi
 import numpy as np
 import matplotlib.pyplot as plt
-import matplotlib
 from PIL import Image, ImageEnhance
 from scipy import ndimage as ndi
 import math
@@ -17,15 +16,7 @@ import cv2
 import pandas as pd
 from skimage.measure import label, regionprops
 import os.path 
-InputPath='E:/Hyperspectral_Imaging_Python/image/'
-ReferencePath='E:/Hyperspectral_Imaging_Python/image/'
-OutputPath='E:/Hyperspectral_Imaging_Python/image/'
-threshold=7
 
-
-
-path='E:/Hyperspectral_Imaging_Python/image/'
-file='PS32300.raw'
 
 #len(path)
 
@@ -138,7 +129,7 @@ def red_edge_segmentation(img_raw,wavelengths,threshold):
 
 
 def padimage(img,m,n,o):
-    a,b,c=img_raw.shape
+    a,b,c=img.shape
     del1=m-a
     if del1>0:  #smaller than required image size
         if del1 % 2 ==0: 
@@ -146,7 +137,7 @@ def padimage(img,m,n,o):
         else:
             img=np.pad(img, ((math.floor(del1/2), math.floor(del1/2)),(0,0)), 'edge')
     elif del1<0: #larger than required image size
-        img=img[math.ceil(abs(del1)/2):math.ceil(abs(del1)/2)+m-1,:,:]
+        img=img[math.ceil(abs(del1)/2):math.ceil(abs(del1)/2)+m,:,:]
         
     del2=n-b
     if del2>0:
@@ -155,7 +146,7 @@ def padimage(img,m,n,o):
         else:
             img=np.pad(img, ((0,0),(math.floor(del2/2), math.floor(del2/2))), 'edge')
     elif del2<0:
-        img=img[math.ceil(abs(del2)/2):math.ceil(abs(del2)/2)+m-1,:,:]            
+        img=img[math.ceil(abs(del2)/2):math.ceil(abs(del2)/2)+m,:,:]            
         
     if c!=o:
         print("Spectral dimension mismatch")
@@ -227,6 +218,7 @@ def pixelSIPI(intensity,wavelengths):
 
 
 def gettable(file,path,refimg,mask,wavelengths,threshold):
+    refimg1=refimg.copy()
     rootfolder = os.path.basename(path[:-1]) 
     LeafProp=feature_extraction(mask)
     columnlist=['Folder','Filename','Threshold','LeafArea','NDVI','SIPI']+(wavelengths.tolist())
@@ -238,91 +230,102 @@ def gettable(file,path,refimg,mask,wavelengths,threshold):
     df_image['LeafArea']= LeafProp["Area"]    
     intensity=[]
     maskindex = mask ==0
-    refimg[maskindex]=0
+    refimg1[maskindex]=0
+    nonmaskindex=mask !=0
     for i in range(len(wavelengths)):
-        intensity.append(np.mean(refimg[:,:,i]))
+        intensity.append(np.mean(refimg1[nonmaskindex,i]))        
     df_image['NDVI']= pixelNDVI(intensity,wavelengths) 
     df_image['SIPI']= pixelSIPI(intensity,wavelengths)      
     df_image.iloc[0,6:]=intensity
     return df_image
 
 
+def definepath(InputPath):
+    file_list = [f for f in os.listdir(InputPath) if os.path.isfile(os.path.join(InputPath, f)) and f.endswith('.raw')]
+    file_white = [f for f in os.listdir(InputPath+'white') if os.path.isfile(os.path.join(InputPath+'white', f)) and f.endswith('.raw')]    
+    return InputPath, file_list, ('white/'+file_white[0])  
+   
+    
+
+
+InputPath='F:/Phenotyping_Lab/HSI_Raw/'
+OutputPath='F:/Phenotyping_Lab/HSI_Raw/ProcessedResults/'
+threshold=7
+#path='E:/Hyperspectral_Imaging_Python/image/'
+#file='PS32300.raw'
+
+path, file_list, file_white=definepath(InputPath)
+rootfolder = os.path.basename(path[:-1])
+for i in range(len(file_list)):
+    
+    file=file_list[i]
+
+    img_raw, wavelengths, spectral=reshapeImage_modified(path,file)
+    rgb=img2rgb(img_raw,wavelengths)
+#    rgb.show()   
+    mask=red_edge_segmentation(img_raw,wavelengths,threshold=7)
+#    plt.imshow(mask)
+#    plt.show()
+        
+    f_raw = path + file_white
+    f_hdr=f_raw.replace('.raw', '.hdr')
+    white_ref = np.array(envi.open(f_hdr,f_raw).load()) 
+    
+    m,n,o=img_raw.shape #match image size
+    a,b,c=white_ref.shape
+    
+    if [m,n,o]!=[a,b,c]:
+        whiteimg=padimage(white_ref,m,n,o)
+    else:
+        whiteimg=white_ref
+    
+#    refimg=np.divide(img_raw,whiteimg)
+    refimg=img_raw/whiteimg
+    calirgb= img2rgb(refimg,wavelengths)
+#    image_cali_test=refimg[:,:,200]     
+    DataCell=gettable(file,path,refimg,mask,wavelengths,threshold)
+    
+    
+    datefolder = os.path.basename(path[:-1])
+    if not os.path.exists(os.path.join(OutputPath, datefolder)):
+        os.mkdir(os.path.join(OutputPath, datefolder))
+    foldername=os.path.join(OutputPath, datefolder,file[:-4])
+    if not os.path.exists(foldername):        
+        os.mkdir(foldername)
+    
+    rgb.save(foldername+'/RGB.png')
+    calirgb.save(foldername+'/caliRGB.png')
+    cv2.imwrite((foldername+'/mask.png'), mask, [cv2.IMWRITE_PNG_BILEVEL, 1])
+    #np.save(foldername, refimg)
+
+    if i==0:
+        DataTable=DataCell  
+    else:
+        DataTable = pd.concat([DataTable,DataCell])
+
+
+tablename=OutputPath+'Table_'+rootfolder+'.csv'
+DataTable.to_csv(tablename, index = False)
 
 
 
-img_raw, wavelengths, spectral=reshapeImage_modified(path,file)
-
-rgb=img2rgb(img_raw,wavelengths)
-rgb.show()
-
-mask=red_edge_segmentation(img_raw,wavelengths,threshold=7)
-plt.imshow(mask)
-plt.show()
-
-
-f_raw = path + file
-f_hdr=f_raw.replace('.raw', '.hdr')
-white_ref = np.array(envi.open(f_hdr,f_raw).load())
-
-m,n,o=img_raw.shape #match image size
-a,b,c=img_raw.shape
-
-
-
-if [m,n,o]==[a,b,c]:
-    whiteimg=padimage(white_ref,m,n,o)
-else:
-    whiteimg=white_ref
-
-refimg=np.divide(img_raw,whiteimg)
-
-calirgb=img2rgb(refimg,wavelengths)    
-
-
+#plt.plot(DataCell.iloc[0,10:])
 
 
 
 
 ## create Pillow image
 #image2 = Image.fromarray(data)
-
-rgbdata = np.asarray(rgb).copy()
-maskindex = mask ==0 
-rgbdata[maskindex] = 0
-plt.imshow(rgbdata)
-
-
+## creat numpy image
+#rgbdata = np.asarray(rgb).copy()
+#maskindex = mask ==0 
+#rgbdata[maskindex] = 0
+#plt.imshow(rgbdata)
 
 
-for i in range(np.size(InputPath)):
+
   
-    dark_ref = envi.open('E:/Hyperspectral_Imaging_Python/image/dark_reference.raw')
-    white_ref = envi.open('E:/Hyperspectral_Imaging_Python/image/white_reference.raw')
-    data_ref = envi.open('E:/Hyperspectral_Imaging_Python/image/data_capture.raw')
-   
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    white_nparr = np.array(white_ref.load())
-    dark_nparr = np.array(dark_ref.load())
-    data_nparr = np.array(data_ref.load()) 
-    
-    [m,n,o]=np.size(data_nparr)
-    [a,b,c]=np.size(white_nparr)
-    
-    corrected_nparr = np.divide(
-    np.subtract(data_nparr, dark_nparr),
-    np.subtract(white_nparr, dark_nparr))
+
+
     
     

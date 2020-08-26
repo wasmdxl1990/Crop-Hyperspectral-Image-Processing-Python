@@ -18,9 +18,7 @@ from skimage.measure import label, regionprops
 import os.path 
 
 
-InputPath='F:/Phenotyping_Lab/HSI_Raw/'
-OutputPath='F:/Phenotyping_Lab/HSI_Raw/ProcessedResults/'
-threshold=7
+
 
 #len(path)
 class ImageProcess():

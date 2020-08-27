@@ -20,12 +20,14 @@
 
 # Usage
 * clone this repository
-git clone https://github.com/wasmdxl1990/Crop-Hyperspectral-Image-Processing-Python-.git
+> git clone https://github.com/wasmdxl1990/Crop-Hyperspectral-Image-Processing-Python-.git
 
 * go to the code folder and setup the input path, output path and threshold
-Ususally threshold =7 works well on all my HSI images for plant segmentation.
+> Ususally threshold =7 works well on all my HSI images for plant segmentation.
 
-*run main script
-python main.py
+* run main script<br/>
+> python main.py
 
+* result has been saved in the output path
+> open the /ProcessedData
  
